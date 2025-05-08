@@ -37,7 +37,7 @@ $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
 // Get all visits for all visitors
 $sql = "SELECT v.id as visitor_id, v.full_name, v.company, v.email, v.phone, 
-               vi.id as visit_id, vi.person_to_meet, vi.date, vi.time_in, vi.status
+               vi.id as visit_id, vi.person_to_meet, vi.date, vi.time_in, vi.status, vi.amount_paid
         FROM visitors v
         LEFT JOIN visits vi ON v.id = vi.visitor_id
         $whereSql
