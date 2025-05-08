@@ -14,4 +14,6 @@ mysqli_real_connect($conn, $host, $user, $pass, $db, 28174, NULL, MYSQLI_CLIENT_
 if (mysqli_connect_errno()) {
     die('Database connection failed: ' . mysqli_connect_error());
 }
+// Set MySQL session timezone to IST
+mysqli_query($conn, "SET time_zone = '+05:30'");
 ?>
