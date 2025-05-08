@@ -493,6 +493,22 @@ $prefill_company = isset($_GET['company']) ? htmlspecialchars($_GET['company']) 
                                 <textarea class="form-control" id="purpose" name="purpose" rows="4" required placeholder="Enter purpose of visit"></textarea>
                             </div>
                         </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="vehicleNumberPlate" class="form-label">Vehicle Number Plate</label>
+                                <input type="text" class="form-control" id="vehicleNumberPlate" name="vehicleNumberPlate" required placeholder="Enter vehicle number plate">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="vehicleOwnerName" class="form-label">Vehicle Owner Name</label>
+                                <input type="text" class="form-control" id="vehicleOwnerName" name="vehicleOwnerName" required placeholder="Enter vehicle owner name">
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="amountPayable" class="form-label">Amount Payable</label>
+                                <input type="number" class="form-control" id="amountPayable" name="amountPayable" required min="0.01" step="0.01" placeholder="Enter amount payable">
+                            </div>
+                        </div>
                         <div class="row mt-4">
                             <div class="col-md-12 text-end">
                                 <button type="button" class="btn btn-light me-2" onclick="showScreen('visitor-list')">Cancel</button>
@@ -639,6 +655,7 @@ $prefill_company = isset($_GET['company']) ? htmlspecialchars($_GET['company']) 
                             <th>Company</th>
                             <th>Person To Meet</th>
                             <th>Date & Time In</th>
+                            <th>Amount Status</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -662,7 +679,7 @@ $prefill_company = isset($_GET['company']) ? htmlspecialchars($_GET['company']) 
     </div>
 
     <div class="modal fade" id="checkoutModal" tabindex="-1" aria-labelledby="checkoutModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
                 <form id="checkoutForm">
                     <div class="modal-header">
@@ -670,8 +687,39 @@ $prefill_company = isset($_GET['company']) ? htmlspecialchars($_GET['company']) 
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
-                        <label for="checkoutTime" class="form-label">Select Check Out Time</label>
-                        <input type="time" class="form-control" id="checkoutTime" required>
+                        <div id="checkoutAmountSection" class="mb-3">
+                            <label class="form-label">Amount Payable:</label>
+                            <div id="checkoutAmountValue" style="font-weight:bold"></div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Has the visitor paid the amount?</label>
+                            <div>
+                                <input type="radio" id="amountPaidYes" name="amountPaid" value="Yes" required>
+                                <label for="amountPaidYes">Yes</label>
+                                <input type="radio" id="amountPaidNo" name="amountPaid" value="No" required>
+                                <label for="amountPaidNo">No</label>
+                            </div>
+                        </div>
+                        
+                        <!-- Invoice Preview Section (initially hidden) -->
+                        <div id="invoicePreviewSection" style="display: none;">
+                            <div class="card mb-3">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h6 class="mb-0">Invoice Preview</h6>
+                                    <button type="button" class="btn btn-sm btn-primary" onclick="printInvoice()">
+                                        <i class="fas fa-print"></i> Print Invoice
+                                    </button>
+                                </div>
+                                <div class="card-body" id="invoiceContent">
+                                    <!-- Invoice content will be loaded here -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="checkoutTimeSection">
+                            <label for="checkoutTime" class="form-label">Select Check Out Time</label>
+                            <input type="time" class="form-control" id="checkoutTime" required>
+                        </div>
                         <input type="hidden" id="checkoutVisitId">
                     </div>
                     <div class="modal-footer">
@@ -705,6 +753,9 @@ $prefill_company = isset($_GET['company']) ? htmlspecialchars($_GET['company']) 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script>
+        // Place this at the top of your <script> tag, before any function or event handler
+        let companyInfo = { name: '', address: '' };
+
         // Function to show different screens
         function showScreen(screenId) {
             // Hide all screens
@@ -759,6 +810,9 @@ $prefill_company = isset($_GET['company']) ? htmlspecialchars($_GET['company']) 
             const visitDate = form.visitDate.value;
             const visitTime = form.visitTime.value;
             const purpose = form.purpose.value.trim();
+            const vehicleNumberPlate = form.vehicleNumberPlate.value.trim();
+            const vehicleOwnerName = form.vehicleOwnerName.value.trim();
+            const amountPayable = form.amountPayable.value.trim();
 
             // Regex for phone
             const phoneRegex = /^[0-9\-\+\s\(\)]+$/;
@@ -771,6 +825,11 @@ $prefill_company = isset($_GET['company']) ? htmlspecialchars($_GET['company']) 
             if (!visitDate) errors.push('Date is required.');
             if (!visitTime) errors.push('Time is required.');
             if (!purpose) errors.push('Purpose is required.');
+            if (!vehicleNumberPlate) errors.push('Vehicle number plate is required.');
+            if (!vehicleOwnerName) errors.push('Vehicle owner name is required.');
+            if (!amountPayable || isNaN(amountPayable) || Number(amountPayable) <= 0) {
+                errors.push('Amount payable must be greater than 0.');
+            }
 
             if (errors.length > 0) {
                 let errorHtml = `
@@ -962,31 +1021,40 @@ $prefill_company = isset($_GET['company']) ? htmlspecialchars($_GET['company']) 
                     }
                     if (e.target.classList.contains('btn-check-out')) {
                         const visitId = e.target.getAttribute('data-id');
-                        document.getElementById('checkoutVisitId').value = visitId;
-                        document.getElementById('checkoutTime').value = ''; // reset
-                        const modalEl = document.getElementById('checkoutModal');
-                        const modal = new bootstrap.Modal(modalEl);
-                        modal.show();
+                        openCheckoutModal(visitId);
                     }
                     if (e.target.classList.contains('btn-view')) {
-                        const visitId = e.target.getAttribute('data-id');
-                        window.location.href = `visitor_view_details.php?id=${visitId}`;
+                        // Find the closest row and get the visitor_id
+                        const row = e.target.closest('tr');
+                        const visitorId = row.getAttribute('data-visitor-id');
+                        if (visitorId) {
+                            window.location.href = `visitor_view_details.php?id=${visitorId}`;
+                        }
                     }
                 });
             }
 
             // Make visitor rows clickable to view details
-            document.querySelector('#visitorTable').addEventListener('click', function(e) {
-                // Prevent row click if a button inside is clicked
-                if (e.target.closest('button')) return;
+            document.querySelector('#visitorTable tbody').addEventListener('click', function(e) {
+                // Find the closest .visitor-row (in case a cell or span is clicked)
                 const row = e.target.closest('.visitor-row');
-                if (row) {
-                    const visitorId = row.getAttribute('data-visitor-id');
-                    if (visitorId) {
-                        window.location.href = `visitor_view_details.php?id=${visitorId}`;
-                    }
+                if (!row) return;
+                // Prevent row click if a button or link inside is clicked
+                if (e.target.closest('button') || e.target.tagName === 'A') return;
+                const visitorId = row.getAttribute('data-visitor-id');
+                if (visitorId) {
+                    window.location.href = `visitor_view_details.php?id=${visitorId}`;
                 }
             });
+
+            fetch('get_company_info.php')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        companyInfo.name = data.company_name;
+                        companyInfo.address = data.company_address;
+                    }
+                });
         });
 
         let currentPage = 1;
@@ -1048,12 +1116,20 @@ $prefill_company = isset($_GET['company']) ? htmlspecialchars($_GET['company']) 
                     const local = window.utcToLocal(row.date, row.time_in);
                     dateTimeDisplay = `${local.localDate} at ${local.localTime}`;
                 }
+                // Amount status
+                let amountStatus = '';
+                if (row.amount_paid === 'Yes') {
+                    amountStatus = '<span class="badge bg-success">Paid</span>';
+                } else {
+                    amountStatus = '<span class="badge bg-danger">Unpaid</span>';
+                }
                 tbody.innerHTML += `
                     <tr class="visitor-row" data-visitor-id="${row.visitor_id}" style="cursor:pointer;">
                         <td>${row.full_name}</td>
                         <td>${row.company}</td>
                         <td>${row.person_to_meet || '-'}</td>
                         <td>${dateTimeDisplay}</td>
+                        <td>${amountStatus}</td>
                         <td><span class="${statusClass}">${row.status || '-'}</span></td>
                         <td>${actions}</td>
                     </tr>
@@ -1144,15 +1220,147 @@ $prefill_company = isset($_GET['company']) ? htmlspecialchars($_GET['company']) 
             toast.show();
         }
 
+        // Add this function to handle invoice generation
+        function generateInvoice(visitData) {
+            const invoiceContent = document.getElementById('invoiceContent');
+            const invoiceHtml = `
+                <div class="invoice-container">
+                    <div class="text-center mb-4">
+                        <h4>INVOICE</h4>
+                        <p class="mb-1">${companyInfo.name || 'Your Company Name'}</p>
+                        <p class="mb-1">${companyInfo.address || 'Your Company Address'}</p>
+                    </div>
+                    <div class="row mb-4">
+                        <div class="col-6">
+                            <p><strong>Visitor Name:</strong> ${visitData.full_name}</p>
+                            <p><strong>Company:</strong> ${visitData.company}</p>
+                            <p><strong>Phone:</strong> ${visitData.phone}</p>
+                            <p><strong>Email:</strong> ${visitData.email}</p>
+                        </div>
+                        <div class="col-6 text-end">
+                            <p><strong>Date:</strong> ${visitData.date}</p>
+                            <p><strong>Time In:</strong> ${visitData.time_in}</p>
+                            <p><strong>Vehicle Number:</strong> ${visitData.vehicle_number_plate}</p>
+                            <p><strong>Vehicle Owner:</strong> ${visitData.vehicle_owner_name}</p>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-12">
+                            <table class="table table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th>Description</th>
+                                        <th class="text-end">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Visitor Management Fee</td>
+                                        <td class="text-end">₹${visitData.amount_payable}</td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="1" class="text-end"><strong>Total Amount:</strong></td>
+                                        <td class="text-end"><strong>₹${visitData.amount_payable}</strong></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+            invoiceContent.innerHTML = invoiceHtml;
+        }
+
+        // Update the openCheckoutModal function
+        function openCheckoutModal(visitId) {
+            fetch('get_visit_details.php?id=' + visitId)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('checkoutAmountValue').textContent =
+                            data.amount_payable ? `₹${data.amount_payable}` : 'N/A';
+                        document.getElementById('checkoutVisitId').value = visitId;
+                        
+                        // Store visit data for invoice generation
+                        window.currentVisitData = data;
+                        
+                        // Show the modal
+                        var modal = new bootstrap.Modal(document.getElementById('checkoutModal'));
+                        modal.show();
+                    } else {
+                        showToast('Could not fetch visit details.', 'danger');
+                    }
+                })
+                .catch(() => {
+                    showToast('Could not fetch visit details.', 'danger');
+                });
+        }
+
+        // Add event listeners for the radio buttons
+        document.querySelectorAll('input[name="amountPaid"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const invoiceSection = document.getElementById('invoicePreviewSection');
+                const checkoutTimeSection = document.getElementById('checkoutTimeSection');
+                
+                if (this.value === 'No') {
+                    // Show invoice preview
+                    invoiceSection.style.display = 'block';
+                    generateInvoice(window.currentVisitData);
+                    // ALSO show checkout time section
+                    checkoutTimeSection.style.display = 'block';
+                } else {
+                    // Hide invoice preview and show checkout time
+                    invoiceSection.style.display = 'none';
+                    checkoutTimeSection.style.display = 'block';
+                }
+            });
+        });
+
+        // Add print function
+        function printInvoice() {
+            const printContent = document.getElementById('invoiceContent').innerHTML;
+            // Open a new window for printing
+            const printWindow = window.open('', '', 'width=800,height=600');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>Invoice</title>
+                    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+                    <style>
+                        body { padding: 20px; }
+                        .invoice-container { max-width: 700px; margin: auto; }
+                    </style>
+                </head>
+                <body>
+                    <div class="invoice-container">
+                        ${printContent}
+                    </div>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.focus();
+            printWindow.print();
+            // Optionally, close the print window after printing
+            printWindow.onafterprint = function() { printWindow.close(); };
+        }
+
+        // Update the form submit handler
         document.getElementById('checkoutForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const visitId = document.getElementById('checkoutVisitId').value;
-            let timeOut = document.getElementById('checkoutTime').value;
-            if (!visitId || !timeOut) return;
+            const timeOut = document.getElementById('checkoutTime').value;
+            const amountPaid = document.querySelector('input[name="amountPaid"]:checked')?.value;
+
+            if (!visitId || !timeOut || !amountPaid) {
+                showToast('Please fill all required fields', 'danger');
+                return;
+            }
+
             fetch('update_visit_status.php', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: `visit_id=${encodeURIComponent(visitId)}&action=checkout&time_out=${encodeURIComponent(timeOut)}`
+                body: `visit_id=${encodeURIComponent(visitId)}&action=checkout&time_out=${encodeURIComponent(timeOut)}&amount_paid=${amountPaid}`
             })
             .then(res => res.json())
             .then(data => {
@@ -1163,7 +1371,6 @@ $prefill_company = isset($_GET['company']) ? htmlspecialchars($_GET['company']) 
                     const modalInstance = bootstrap.Modal.getInstance(modalEl);
                     if (modalInstance) {
                         modalInstance.hide();
-                        // Remove modal backdrop and reset body classes
                         document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
                         document.body.classList.remove('modal-open');
                         document.body.style = '';
@@ -1175,14 +1382,6 @@ $prefill_company = isset($_GET['company']) ? htmlspecialchars($_GET['company']) 
             .catch(() => {
                 showToast('Failed to check out', 'danger');
             });
-        });
-
-        // Add event listener for modal hidden event
-        document.getElementById('checkoutModal').addEventListener('hidden.bs.modal', function () {
-            // Remove modal backdrop and reset body classes
-            document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
-            document.body.classList.remove('modal-open');
-            document.body.style = '';
         });
 
         function setActiveSidebar(screenId) {
