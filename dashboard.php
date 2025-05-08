@@ -1,4 +1,5 @@
 <?php
+date_default_timezone_set('Asia/Kolkata');
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header('Location: index.php');
@@ -35,11 +36,12 @@ $stmt->close();
 
 // 4. Fetch 3 most recent checked in or checked out visitors for today only
 $recent_visitors = [];
-$stmt = $conn->prepare("SELECT v.full_name, vs.person_to_meet, vs.status, vs.date, vs.time_in, vs.time_out, vs.id FROM visits vs JOIN visitors v ON vs.visitor_id = v.id WHERE vs.status IN ('Checked In', 'Checked Out') AND vs.date = CURDATE() ORDER BY vs.date DESC, vs.time_in DESC LIMIT 3");
+$stmt = $conn->prepare("SELECT v.id as visitor_id, v.full_name, vs.person_to_meet, vs.status, vs.date, vs.time_in, vs.time_out, vs.id FROM visits vs JOIN visitors v ON vs.visitor_id = v.id WHERE vs.status IN ('Checked In', 'Checked Out') AND vs.date = CURDATE() ORDER BY vs.date DESC, vs.time_in DESC LIMIT 3");
 if ($stmt && $stmt->execute()) {
-    $stmt->bind_result($full_name, $person_to_meet, $status, $date, $time_in, $time_out, $visit_id);
+    $stmt->bind_result($visitor_id, $full_name, $person_to_meet, $status, $date, $time_in, $time_out, $visit_id);
     while ($stmt->fetch()) {
         $recent_visitors[] = [
+            'visitor_id' => $visitor_id,
             'full_name' => $full_name,
             'person_to_meet' => $person_to_meet,
             'status' => $status,
@@ -54,11 +56,12 @@ if ($stmt && $stmt->execute()) {
 
 // 5. Fetch upcoming visits (status = 'Scheduled', date >= today), order by date and time_in ascending
 $upcoming_visits = [];
-$stmt = $conn->prepare("SELECT v.full_name, vs.person_to_meet, vs.date, vs.time_in, vs.id FROM visits vs JOIN visitors v ON vs.visitor_id = v.id WHERE vs.status = 'Scheduled' AND vs.date >= CURDATE() ORDER BY vs.date ASC, vs.time_in ASC LIMIT 3");
+$stmt = $conn->prepare("SELECT v.id as visitor_id, v.full_name, vs.person_to_meet, vs.date, vs.time_in, vs.id FROM visits vs JOIN visitors v ON vs.visitor_id = v.id WHERE vs.status = 'Scheduled' AND vs.date >= CURDATE() ORDER BY vs.date ASC, vs.time_in ASC LIMIT 3");
 if ($stmt && $stmt->execute()) {
-    $stmt->bind_result($full_name, $person_to_meet, $date, $time_in, $visit_id);
+    $stmt->bind_result($visitor_id, $full_name, $person_to_meet, $date, $time_in, $visit_id);
     while ($stmt->fetch()) {
         $upcoming_visits[] = [
+            'visitor_id' => $visitor_id,
             'full_name' => $full_name,
             'person_to_meet' => $person_to_meet,
             'date' => $date,
@@ -579,7 +582,10 @@ if (count($all_visitors) > 0) {
                                         <li class="list-group-item text-center text-muted">No recent visitors today.</li>
                                     <?php else: ?>
                                         <?php foreach ($recent_visitors as $rv): ?>
-                                            <li class="list-group-item d-flex justify-content-between align-items-center visitor-card" data-id="<?php echo $rv['visit_id']; ?>" style="cursor:pointer;">
+                                            <li class="list-group-item d-flex justify-content-between align-items-center visitor-card"
+                                                data-id="<?php echo $rv['visit_id']; ?>"
+                                                data-visitor-id="<?php echo $rv['visitor_id']; ?>"
+                                                style="cursor:pointer;">
                                                 <div>
                                                     <?php
                                                         // Status badge
@@ -594,35 +600,16 @@ if (count($all_visitors) > 0) {
                                                     <br><small class="text-muted">Meeting with: <?php echo htmlspecialchars($rv['person_to_meet']); ?></small>
                                                 </div>
                                                 <?php
-                                                    $badge = '';
-                                                    if ($rv['status'] === 'Checked In') {
-                                                        $dt_in = new DateTime($rv['date'] . ' ' . $rv['time_in']);
-                                                        $now = new DateTime();
-                                                        $interval = $dt_in->diff($now);
-                                                        $parts = [];
-                                                        if ($interval->d > 0) $parts[] = $interval->d . 'd';
-                                                        if ($interval->h > 0) $parts[] = $interval->h . 'h';
-                                                        if ($interval->i > 0) $parts[] = $interval->i . 'm';
-                                                        if (empty($parts)) $parts[] = 'Now';
-                                                        $badge = '<span class="badge bg-success rounded-pill">' . implode(' ', $parts) . '</span>';
-                                                    } else if ($rv['status'] === 'Checked Out') {
-                                                        $dt_in = new DateTime($rv['date'] . ' ' . $rv['time_in']);
-                                                        $dt_out = new DateTime($rv['date'] . ' ' . $rv['time_out']);
-                                                        if ($rv['time_out'] < $rv['time_in']) {
-                                                            $dt_out->modify('+1 day');
-                                                        }
-                                                        if ($rv['time_out']) {
-                                                            $interval = $dt_in->diff($dt_out);
-                                                            $parts = [];
-                                                            if ($interval->d > 0) $parts[] = $interval->d . 'd';
-                                                            if ($interval->h > 0) $parts[] = $interval->h . 'h';
-                                                            if ($interval->i > 0) $parts[] = $interval->i . 'm';
-                                                            if (empty($parts)) $parts[] = '0m';
-                                                            $badge = '<span class="badge bg-secondary rounded-pill">Spent ' . implode(' ', $parts) . '</span>';
-                                                        }
-                                                    } else if ($rv['status'] === 'Scheduled') {
-                                                        $badge = '<span class="badge bg-warning text-dark rounded-pill">Scheduled</span>';
-                                                    }
+                                                    $tz = new DateTimeZone('Asia/Kolkata');
+                                                    $dt_in = new DateTime($rv['date'] . ' ' . $rv['time_in'], $tz);
+                                                    $now = new DateTime('now', $tz);
+                                                    $interval = $dt_in->diff($now);
+                                                    $parts = [];
+                                                    if ($interval->d > 0) $parts[] = $interval->d . 'd';
+                                                    if ($interval->h > 0) $parts[] = $interval->h . 'h';
+                                                    if ($interval->i > 0) $parts[] = $interval->i . 'm';
+                                                    if (empty($parts)) $parts[] = 'Now';
+                                                    $badge = '<span class="badge bg-success rounded-pill">' . implode(' ', $parts) . '</span>';
                                                     echo $badge;
                                                 ?>
                                             </li>
@@ -649,7 +636,10 @@ if (count($all_visitors) > 0) {
                                         <li class="list-group-item text-center text-muted">No upcoming visits.</li>
                                     <?php else: ?>
                                         <?php foreach ($upcoming_visits as $uv): ?>
-                                            <li class="list-group-item d-flex justify-content-between align-items-center visitor-card" data-id="<?php echo $uv['visit_id']; ?>" style="cursor:pointer;">
+                                            <li class="list-group-item d-flex justify-content-between align-items-center visitor-card"
+                                                data-id="<?php echo $uv['visit_id']; ?>"
+                                                data-visitor-id="<?php echo $uv['visitor_id']; ?>"
+                                                style="cursor:pointer;">
                                                 <div>
                                                     <h6 class="mb-0"><?php echo htmlspecialchars($uv['full_name']); ?></h6>
                                                     <small class="text-muted">Meeting with: <?php echo htmlspecialchars($uv['person_to_meet']); ?></small>
@@ -708,6 +698,8 @@ if (count($all_visitors) > 0) {
                                 <th>Email</th>
                                 <th>Phone</th>
                                 <th>Status</th>
+                                <th>Amount Status</th>
+                                <th>Date & Time</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -772,6 +764,22 @@ if (count($all_visitors) > 0) {
                             <div class="col-md-12">
                                 <label for="regPurpose" class="form-label">Purpose of Visit</label>
                                 <textarea class="form-control" id="regPurpose" name="purpose" rows="4" required placeholder="Enter purpose of visit"></textarea>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="regVehicleNumberPlate" class="form-label">Vehicle Number Plate</label>
+                                <input type="text" class="form-control" id="regVehicleNumberPlate" name="vehicleNumberPlate" required placeholder="Enter vehicle number plate">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="regVehicleOwnerName" class="form-label">Vehicle Owner Name</label>
+                                <input type="text" class="form-control" id="regVehicleOwnerName" name="vehicleOwnerName" required placeholder="Enter vehicle owner name">
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="regAmountPayable" class="form-label">Amount Payable</label>
+                                <input type="number" class="form-control" id="regAmountPayable" name="amountPayable" required min="0.01" step="0.01" placeholder="Enter amount payable">
                             </div>
                         </div>
                         <div class="row mt-4">
@@ -871,6 +879,17 @@ if (count($all_visitors) > 0) {
                 else if (row.status === 'Checked Out') statusBadge = '<span class="badge bg-danger bg-opacity-25 text-danger fw-semibold" style="border-radius:12px;">Checked Out</span>';
                 else if (row.status === 'Scheduled') statusBadge = '<span class="badge bg-primary bg-opacity-25 text-primary fw-semibold" style="border-radius:12px;">Scheduled</span>';
                 else statusBadge = '<span class="badge bg-secondary bg-opacity-25 text-secondary fw-semibold" style="border-radius:12px;">No Visits</span>';
+
+                // Amount status badge
+                let amountStatus = '';
+                if (row.amount_paid === 'Yes') {
+                    amountStatus = '<span class="badge bg-success">Paid</span>';
+                } else if (row.amount_paid === 'No') {
+                    amountStatus = '<span class="badge bg-danger">Unpaid</span>';
+                } else {
+                    amountStatus = '<span class="badge bg-secondary">-</span>';
+                }
+
                 // Convert UTC to local for display, fallback to '-' if invalid
                 let localDate = '-', localTime = '-';
                 if (window.utcToLocal) {
@@ -885,6 +904,7 @@ if (count($all_visitors) > 0) {
                         <td>${row.email || ''}</td>
                         <td>${row.phone || ''}</td>
                         <td>${statusBadge}</td>
+                        <td>${amountStatus}</td>
                         <td>${localDate} ${localTime}</td>
                         <td><a href="visitor_view_details.php?id=${row.visitor_id}" class="btn btn-sm btn-outline-primary">View</a></td>
                     </tr>
@@ -1003,6 +1023,14 @@ if (count($all_visitors) > 0) {
             if (!visitDate) errors.push('Date is required.');
             if (!visitTime) errors.push('Time is required.');
             if (!purpose) errors.push('Purpose is required.');
+            const vehicleNumberPlate = form.vehicleNumberPlate.value.trim();
+            const vehicleOwnerName = form.vehicleOwnerName.value.trim();
+            const amountPayable = form.amountPayable.value.trim();
+            if (!vehicleNumberPlate) errors.push('Vehicle number plate is required.');
+            if (!vehicleOwnerName) errors.push('Vehicle owner name is required.');
+            if (!amountPayable || isNaN(amountPayable) || Number(amountPayable) <= 0) {
+                errors.push('Amount payable must be greater than 0.');
+            }
             if (errors.length > 0) {
                 let errorHtml = `<div class="alert alert-danger position-relative" role="alert" id="visitor-alert">
                     <button type="button" class="btn-close position-absolute top-0 end-0 m-3" aria-label="Close" onclick="this.parentElement.style.display='none';"></button>
@@ -1065,17 +1093,16 @@ if (count($all_visitors) > 0) {
     </script>
     <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Make visitor rows clickable to view details in Visitors tab
-        document.querySelector('#ajaxVisitorTable').addEventListener('click', function(e) {
-            // Prevent row click if a button inside is clicked
-            if (e.target.closest('button') || e.target.tagName === 'A') return;
-            const row = e.target.closest('.visitor-row');
-            if (row) {
-                const visitorId = row.getAttribute('data-visitor-id');
+        // Make recent and upcoming visitor rows clickable
+        document.querySelectorAll('.visitor-card[data-visitor-id]').forEach(function(row) {
+            row.addEventListener('click', function(e) {
+                // Prevent click if a link or button inside is clicked
+                if (e.target.tagName === 'A' || e.target.closest('a,button')) return;
+                var visitorId = this.getAttribute('data-visitor-id');
                 if (visitorId) {
-                    window.location.href = `visitor_view_details.php?id=${visitorId}`;
+                    window.location.href = 'visitor_view_details.php?id=' + visitorId;
                 }
-            }
+            });
         });
     });
     </script>
