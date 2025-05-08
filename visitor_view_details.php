@@ -7,6 +7,15 @@ if (!isset($_SESSION['user_id'])) {
 require_once 'db.php';
 $admin_name = $_SESSION['user_name'] ?? 'Admin User';
 
+$company_name = '';
+$company_address = '';
+$stmt = $conn->prepare("SELECT company_name, address FROM company_info WHERE id=1");
+if ($stmt && $stmt->execute()) {
+    $stmt->bind_result($company_name, $company_address);
+    $stmt->fetch();
+    $stmt->close();
+}
+
 $visitor_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 $visitor = null;
 $visits = [];
@@ -37,6 +46,13 @@ if ($visitor_id > 0) {
 } else {
     $error = 'Invalid visitor ID.';
 }
+
+// Clean up phone number (remove spaces, dashes, parentheses, plus)
+$wa_phone = preg_replace('/\D/', '', $visitor['phone']); // Only digits
+if (strlen($wa_phone) == 10) $wa_phone = '91' . $wa_phone; // Add country code if needed
+
+$wa_message = "Hi " . $visitor['full_name'] . ", here is your invoice from VisitorConnect.";
+$wa_link = "https://wa.me/$wa_phone?text=" . urlencode($wa_message);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -261,6 +277,16 @@ if ($visitor_id > 0) {
                                 <i class="fas fa-building me-2 text-muted"></i><span class="text-muted"><?php echo htmlspecialchars($visitor['company']); ?></span>
                             </div>
                         </div>
+                        <?php
+                        $wa_phone = preg_replace('/\D/', '', $visitor['phone']);
+                        if (strlen($wa_phone) == 10) $wa_phone = '91' . $wa_phone;
+
+                        $wa_message = "Hi " . $visitor['full_name'] . ", here is your invoice from VisitorConnect.";
+                        $wa_link = "https://wa.me/$wa_phone?text=" . urlencode($wa_message);
+                        ?>
+                        <a href="<?php echo $wa_link; ?>" target="_blank" class="btn btn-success btn-sm mt-2">
+                            <i class="fab fa-whatsapp"></i> Send WhatsApp
+                        </a>
                         <?php if (!empty($visits)): ?>
                         <div class="mb-3">
                             <div class="fw-semibold mb-1">Latest Visit:</div>
@@ -276,6 +302,36 @@ if ($visitor_id > 0) {
                                 </div>
                                 <div class="col-md-6 mb-2">
                                     <i class="fas fa-clock me-2 text-muted"></i><span class="text-muted">Time Out: <?php echo $visits[0]['time_out'] !== null ? htmlspecialchars($visits[0]['time_out']) : '-'; ?></span>
+                                </div>
+                                <div class="col-md-6 mb-2">
+                                    <i class="fas fa-car me-2 text-muted"></i>
+                                    <span class="text-muted">Vehicle Number: <?php echo htmlspecialchars($visits[0]['vehicle_number_plate'] ?? '-'); ?></span>
+                                </div>
+                                <div class="col-md-6 mb-2">
+                                    <i class="fas fa-user me-2 text-muted"></i>
+                                    <span class="text-muted">Vehicle Owner: <?php echo htmlspecialchars($visits[0]['vehicle_owner_name'] ?? '-'); ?></span>
+                                </div>
+                                <div class="col-md-6 mb-2">
+                                    <i class="fas fa-rupee-sign me-2 text-muted"></i>
+                                    <span class="text-muted">Amount Payable: ₹<?php echo htmlspecialchars($visits[0]['amount_payable'] ?? '0.00'); ?></span>
+                                </div>
+                                <div class="col-md-6 mb-2">
+                                    <span class="badge <?php echo ($visits[0]['amount_paid'] === 'Yes') ? 'bg-success' : 'bg-danger'; ?>">
+                                        <?php echo ($visits[0]['amount_paid'] === 'Yes') ? 'Paid' : 'Unpaid'; ?>
+                                    </span>
+                                </div>
+                                <div class="col-md-12 mb-2">
+                                    <?php
+                                    $latestVisit = $visits[0];
+                                    $latestVisit['full_name'] = $visitor['full_name'];
+                                    $latestVisit['company'] = $visitor['company'];
+                                    $latestVisit['phone'] = $visitor['phone'];
+                                    $latestVisit['email'] = $visitor['email'];
+                                    ?>
+                                    <button class="btn btn-outline-primary btn-sm"
+                                        onclick="generateInvoice(<?php echo htmlspecialchars(json_encode($latestVisit), ENT_QUOTES, 'UTF-8'); ?>)">
+                                        Generate Invoice
+                                    </button>
                                 </div>
                             </div>
                             <div class="fw-semibold mb-1">Purpose of Visit:</div>
@@ -300,7 +356,39 @@ if ($visitor_id > 0) {
                                     <div class="text-muted mb-1"><?php echo htmlspecialchars($visit['purpose']); ?></div>
                                     <div class="small">Time In: <?php echo htmlspecialchars($visit['time_in']); ?></div>
                                     <div class="small mb-2">Time Out: <?php echo $visit['time_out'] !== null ? htmlspecialchars($visit['time_out']) : '-'; ?></div>
-                                    <span class="badge status"><?php echo htmlspecialchars($visit['status']); ?></span>
+                                    <div class="mb-1">
+                                        <i class="fas fa-car me-2 text-muted"></i>
+                                        Vehicle Number: <?php echo htmlspecialchars($visit['vehicle_number_plate'] ?? '-'); ?>
+                                    </div>
+                                    <div class="mb-1">
+                                        <i class="fas fa-user me-2 text-muted"></i>
+                                        Vehicle Owner: <?php echo htmlspecialchars($visit['vehicle_owner_name'] ?? '-'); ?>
+                                    </div>
+                                    <div class="mb-1">
+                                        <i class="fas fa-rupee-sign me-2 text-muted"></i>
+                                        Amount Payable: ₹<?php echo htmlspecialchars($visit['amount_payable'] ?? '0.00'); ?>
+                                    </div>
+                                    <div class="mb-1">
+                                        <span class="badge <?php echo ($visit['amount_paid'] === 'Yes') ? 'bg-success' : 'bg-danger'; ?>">
+                                            <?php echo ($visit['amount_paid'] === 'Yes') ? 'Paid' : 'Unpaid'; ?>
+                                        </span>
+                                    </div>
+                                    <div class="mb-2">
+                                        <?php
+                                        $visitForJs = $visit;
+                                        $visitForJs['full_name'] = $visitor['full_name'];
+                                        $visitForJs['company'] = $visitor['company'];
+                                        $visitForJs['phone'] = $visitor['phone'];
+                                        $visitForJs['email'] = $visitor['email'];
+                                        ?>
+                                        <button class="btn btn-outline-primary btn-sm"
+                                            onclick="generateInvoice(<?php echo htmlspecialchars(json_encode($visitForJs), ENT_QUOTES, 'UTF-8'); ?>)">
+                                            Generate Invoice
+                                        </button>
+                                        <?php if ($visit['amount_paid'] !== 'Yes'): ?>
+                                            <button class="btn btn-success btn-sm ms-2" onclick="markAsPaid(<?php echo $visit['id']; ?>, this)">Mark as Paid</button>
+                                        <?php endif; ?>
+                                    </div>
                                 </div>
                             <?php endforeach; ?>
                         <?php else: ?>
@@ -372,6 +460,24 @@ if ($visitor_id > 0) {
             </div>
           </div>
         </div>
+        <!-- Mark as Paid Confirmation Modal -->
+        <div class="modal fade" id="markAsPaidModal" tabindex="-1" aria-labelledby="markAsPaidModalLabel" aria-hidden="true">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" id="markAsPaidModalLabel">Confirm Payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                Are you sure you want to mark this visit as <strong>Paid</strong>?
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="confirmMarkAsPaidBtn">Yes, Mark as Paid</button>
+              </div>
+            </div>
+          </div>
+        </div>
         <?php endif; ?>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
@@ -437,6 +543,139 @@ if ($visitor_id > 0) {
             window.location.href = 'index.php?logout=1';
         });
     });
+
+    function generateInvoice(visit) {
+        var companyName = <?php echo json_encode($company_name ?? 'Your Company Name'); ?>;
+        var companyAddress = <?php echo json_encode($company_address ?? 'Your Company Address'); ?>;
+        var statusText = (visit.amount_paid === 'Yes') ? 'Paid' : 'Pending';
+
+        var html = `
+        <div class="container mt-4" style="max-width:700px;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+            <div class="invoice-container">
+                <div class="text-center mb-4">
+                    <h4>INVOICE</h4>
+                    <p class="mb-1" style="font-size:1.1rem;font-weight:600;">${companyName}</p>
+                    <p class="mb-1" style="font-size:1rem;">${companyAddress}</p>
+                </div>
+                <div class="row mb-4">
+                    <div class="col-6" style="float:left;width:48%;">
+                        <p><strong>Visitor Name:</strong> ${visit.full_name || ''}</p>
+                        <p><strong>Company:</strong> ${visit.company || ''}</p>
+                        <p><strong>Phone:</strong> ${visit.phone || ''}</p>
+                        <p><strong>Email:</strong> ${visit.email || ''}</p>
+                    </div>
+                    <div class="col-6 text-end" style="float:right;width:48%;text-align:right;">
+                        <p><strong>Date:</strong> ${visit.date || ''}</p>
+                        <p><strong>Time In:</strong> ${visit.time_in || ''}</p>
+                        <p><strong>Time Out:</strong> ${visit.time_out || ''}</p>
+                        <p><strong>Vehicle Number:</strong> ${visit.vehicle_number_plate || ''}</p>
+                        <p><strong>Vehicle Owner:</strong> ${visit.vehicle_owner_name || ''}</p>
+                    </div>
+                    <div style="clear:both;"></div>
+                </div>
+                <div class="row">
+                    <div class="col-12">
+                        <table class="table table-bordered" style="width:100%;border-collapse:collapse;">
+                            <thead>
+                                <tr>
+                                    <th style="border:1px solid #dee2e6;padding:8px;">Description</th>
+                                    <th style="border:1px solid #dee2e6;padding:8px;" class="text-end">Amount</th>
+                                    <th style="border:1px solid #dee2e6;padding:8px;" class="text-end">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="border:1px solid #dee2e6;padding:8px;">Visitor Management Fee</td>
+                                    <td style="border:1px solid #dee2e6;padding:8px;" class="text-end">₹${visit.amount_payable || '0.00'}</td>
+                                    <td style="border:1px solid #dee2e6;padding:8px;" class="text-end">${statusText}</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="2" style="border:1px solid #dee2e6;padding:8px;text-align:right;"><strong>Total Amount:</strong></td>
+                                    <td style="border:1px solid #dee2e6;padding:8px;" class="text-end"><strong>₹${visit.amount_payable || '0.00'}</strong></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        `;
+
+        // Open in print window with Bootstrap CSS
+        var printWindow = window.open('', '', 'width=800,height=600');
+        printWindow.document.write(`
+            <html>
+            <head>
+                <title>Invoice</title>
+                <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+                <style>
+                    body { padding: 20px; }
+                    .invoice-container { max-width: 700px; margin: auto; }
+                    .table th, .table td { vertical-align: middle; }
+                </style>
+            </head>
+            <body>
+                ${html}
+            </body>
+            </html>
+        `);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+        printWindow.onafterprint = function() { printWindow.close(); };
+    }
+
+    let markAsPaidVisitId = null;
+    let markAsPaidBtn = null;
+
+    function markAsPaid(visitId, btn) {
+        markAsPaidVisitId = visitId;
+        markAsPaidBtn = btn;
+        // Show the modal
+        var modal = new bootstrap.Modal(document.getElementById('markAsPaidModal'));
+        modal.show();
+    }
+
+    // Handle modal confirmation
+    document.getElementById('confirmMarkAsPaidBtn').onclick = function() {
+        if (!markAsPaidVisitId) return;
+        this.disabled = true;
+        fetch('update_payment_status.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'visit_id=' + encodeURIComponent(markAsPaidVisitId)
+        })
+        .then(res => res.json())
+        .then(data => {
+            this.disabled = false;
+            var modalEl = document.getElementById('markAsPaidModal');
+            var modalInstance = bootstrap.Modal.getInstance(modalEl);
+            if (modalInstance) modalInstance.hide();
+
+            if (data.success) {
+                // Reload the page to update all content
+                window.location.reload();
+            } else {
+                showToast(data.message || 'Failed to update payment status.', 'danger');
+            }
+        })
+        .catch(() => {
+            this.disabled = false;
+            showToast('Failed to update payment status.', 'danger');
+        });
+    };
+
+    function showToast(message, type = 'primary') {
+        // If you already have a toast system, use it. Otherwise:
+        let toast = document.createElement('div');
+        toast.className = `toast align-items-center text-bg-${type} border-0 position-fixed bottom-0 end-0 m-3`;
+        toast.style.zIndex = 9999;
+        toast.innerHTML = `<div class="d-flex"><div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+        document.body.appendChild(toast);
+        new bootstrap.Toast(toast).show();
+        setTimeout(() => { toast.remove(); }, 4000);
+    }
     </script>
 </body>
 </html>
