@@ -17,14 +17,23 @@ if (!$visit_id || !in_array($action, ['checkin', 'checkout'])) {
 
 if ($action === 'checkin') {
     $status = 'Checked In';
-    $time_in = date('H:i');
-    $stmt = $conn->prepare("UPDATE visits SET status=?, time_in=? WHERE id=?");
-    $stmt->bind_param("ssi", $status, $time_in, $visit_id);
+    date_default_timezone_set('Asia/Kolkata');
+    $date_today = date('Y-m-d');
+    $time_in = date('H:i:s');
+    $stmt = $conn->prepare("UPDATE visits SET status=?, date=?, time_in=? WHERE id=?");
+    $stmt->bind_param("sssi", $status, $date_today, $time_in, $visit_id);
 } else {
     $status = 'Checked Out';
+    date_default_timezone_set('Asia/Kolkata');
     $time_out = $_POST['time_out'] ?? date('H:i');
-    $stmt = $conn->prepare("UPDATE visits SET status=?, time_out=? WHERE id=?");
-    $stmt->bind_param("ssi", $status, $time_out, $visit_id);
+    $amount_paid = $_POST['amount_paid'] ?? null;
+    if ($amount_paid === 'Yes' || $amount_paid === 'No') {
+        $stmt = $conn->prepare("UPDATE visits SET status=?, time_out=?, amount_paid=? WHERE id=?");
+        $stmt->bind_param("sssi", $status, $time_out, $amount_paid, $visit_id);
+    } else {
+        $stmt = $conn->prepare("UPDATE visits SET status=?, time_out=? WHERE id=?");
+        $stmt->bind_param("ssi", $status, $time_out, $visit_id);
+    }
 }
 
 if ($stmt->execute()) {
